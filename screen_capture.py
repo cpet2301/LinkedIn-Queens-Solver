@@ -2,9 +2,10 @@ import cv2
 from PIL import Image
 import pyautogui
 import numpy as np
+from collections import Counter
 import search_algorithms
 
-def detect_puzzle():
+def detect_puzzle(file_name):
     """
     Detect a LinkedIn Queens puzzle from a screenshot.
     
@@ -12,7 +13,7 @@ def detect_puzzle():
     representing the puzzle grid. It then crops and saves the detected puzzle region for further analysis.
 
     Parameters:
-        None
+        filename (string): The name of the file that the image will be saved to.
      
     Returns:
         None
@@ -58,8 +59,8 @@ def detect_puzzle():
         x, y, w, h = best_bbox
         cropped_puzzle = screen[y:y + h, x:x + w]
 
-        cv2.imwrite("detected_puzzle.png", cropped_puzzle)
-        print(f"Puzzle cropped and saved as detected_puzzle.png at ({x}, {y}, {w}, {h})")
+        cv2.imwrite(file_name, cropped_puzzle)
+        print(f"Puzzle cropped and saved as {file_name} at ({x}, {y}, {w}, {h})")
     else:
         print("No squares detected.")
 
@@ -119,77 +120,65 @@ def grid_count(img):
 
 def extract_grid_colors(img):
     """
-    Extract a grid-based representation of colors from an image.
-    
-    Extracts the grid by sampling the color at the center of each grid cell and mapping each cell to a unique color index.
-    
+    Extract grid colors from an NxN grid image by segmenting the image into tiles
+    and finding the most common color in each region, ignoring black and white pixels.
+
     Parameters:
-        img (PIL.Image): The input grid image from which the colors need to be extracted.
-    
+        img (PIL.Image): The input grid image.
+
     Returns:
-        numpy.ndarray: A 2D grid array where each cell contains an integer representing the color index. Dominant colors are mapped to unique indices, while black (background) is reserved as a special index.
+        numpy.ndarray: A 2D grid array where each cell contains an integer index
+                       representing a unique tile color.
     """
-    # Step 1: Determine grid size (number of rows and columns)
-    grid_size = grid_count(img)  # Use the earlier function to determine grid dimensions
-    image_width, image_height = img.size  # Image dimensions
-
-    # Step 2: Identify dominant solid colors in the image
-    max_colors = 10000  # Limit to prevent overflows for large images
-    color_frequencies = img.getcolors(maxcolors=max_colors)  # Count pixels for each color
+    # Step 1: Convert image to RGB and get dimensions
+    grid_size = grid_count(img)
     
-    # Step 3: Sort colors by frequency, prioritize black (RGB: (0, 0, 0))
-    color_frequencies.sort(key=lambda item: 1e10 if sum(item[1]) == 0 else item[0], reverse=True)
-    dominant_colors = color_frequencies[:grid_size + 1]  # Keep most frequent colors, enough for the grid
-    dominant_colors = dominant_colors[1:]  # Exclude black (assumed as the background color)
+    img = img.convert("RGB")
+    image_width, image_height = img.size
 
-    # Step 4: Create a color-to-index mapping
-    color_to_index = {}
-    for index, (_, rgb_color) in enumerate(dominant_colors):
-        color_to_index[rgb_color] = index  # Assign an index to each RGB color
-    color_to_index[(0, 0, 0)] = grid_size  # Reserve the last index for black (background)
+    # Step 2: Calculate tile size (assuming square tiles)
+    tile_width = image_width // grid_size
+    tile_height = image_height // grid_size
 
-    # Step 5: Estimate square size (width and height of each grid cell)
-    square_size = image_width // grid_size
-
-    # Step 6: Initialize the grid color board
+    # Step 3: Initialize color index mapping and the result grid
+    color_to_index = {}  # Map colors to indices
     grid_color_board = np.zeros((grid_size, grid_size), dtype=np.int8)
+    current_index = 0
 
-    # Step 7: Sample colors at approximate midpoints of each grid cell
-    for row in range(grid_size):  # Iterate over rows
-        sample_y = square_size // 2 + row * square_size  # Approximate midpoint Y-coordinate for the row
-        for col in range(grid_size):  # Iterate over columns
-            sample_x = square_size // 2 + col * square_size  # Approximate midpoint X-coordinate for the column
+    # Step 4: Process each tile
+    for row in range(grid_size):
+        for col in range(grid_size):
+            # Define the bounding box for the current tile
+            left = col * tile_width
+            upper = row * tile_height
+            right = left + tile_width
+            lower = upper + tile_height
 
-            shift_direction = 1  # Pixel shift direction for artifact handling
-            color_index = -1  # Initialize color index as invalid
-            attempts = 0  # Retry counter
-            max_attempts = 10  # Maximum retries to avoid infinite loops
+            # Crop the tile region
+            tile_region = img.crop((left, upper, right, lower))
+            tile_pixels = np.array(tile_region).reshape(-1, 3)  # Flatten to a list of (R, G, B)
 
-            # Handle compression artifacts by adjusting sample point
-            while color_index == -1 and attempts < max_attempts:  # Retry loop with limit
-                # Ensure sampling point is within image bounds
-                if 0 <= sample_x < image_width and 0 <= sample_y < image_height:
-                    sampled_color = img.getpixel((sample_x, sample_y))  # Sample color at current point
-                    color_index = color_to_index.get(sampled_color, -1)  # Check if it's a known color
-                else:
-                    break  # Exit if sampling point goes out of bounds
+            # Filter out black and white pixels
+            valid_pixels = [
+                tuple(pixel)  # Convert to tuple for Counter
+                for pixel in tile_pixels
+                if tuple(pixel) != (0, 0, 0) and tuple(pixel) != (255, 255, 255)
+            ]
 
-                # Adjust for artifacts or black background
-                if color_index == grid_size:  # If color is black (edge case)
-                    sample_x -= shift_direction  # Revert shift
-                    shift_direction = -shift_direction  # Change direction
-                    color_index = -1  # Reset to continue searching
-                else:
-                    sample_x += shift_direction  # Shift sample point horizontally
+            if not valid_pixels:
+                raise ValueError(f"No valid colors found in tile at ({row}, {col})")
 
-                attempts += 1  # Increment retry counter
+            # Calculate the mode color (most common color)
+            color_counter = Counter(valid_pixels)
+            mode_color = color_counter.most_common(1)[0][0]  # Get the most frequent color
 
-            # Fallback if no valid color is found after retries
-            if color_index == -1:
-                color_index = grid_size  # Default to black (background)
+            # Map the mode color to an index if it hasn't been seen before
+            if mode_color not in color_to_index:
+                color_to_index[mode_color] = current_index
+                current_index += 1
 
             # Assign the color index to the grid
-            grid_color_board[row, col] = color_index
+            grid_color_board[row, col] = color_to_index[mode_color]
 
     return grid_color_board
 
@@ -257,9 +246,9 @@ def display_grid(state_grid):
 
 # Test
 if __name__ == "__main__":
-    # detect_puzzle()
-
-    image_path = "sample_puzzle.png"
+    image_path = "detected_puzzle.png"
+    
+    # detect_puzzle(image_path)
     cropped_image = cv2.imread(image_path)
     cropped_image_pil = Image.fromarray(cv2.cvtColor(cropped_image, cv2.COLOR_BGR2RGB))
 
@@ -267,4 +256,4 @@ if __name__ == "__main__":
 
     display_grid(state_grid)
 
-    display_grid(search_algorithms.breadth_first_search(state_grid))
+    # display_grid(search_algorithms.breadth_first_search(state_grid))
