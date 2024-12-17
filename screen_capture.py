@@ -3,7 +3,6 @@ from PIL import Image
 import pyautogui
 import numpy as np
 from collections import Counter
-import search_algorithms
 
 def detect_puzzle(file_name):
     """
@@ -246,14 +245,12 @@ def display_grid(state_grid):
 
 # Test
 if __name__ == "__main__":
-    image_path = "detected_puzzle.png"
+    image_path = "puzzle.png"
     
-    # detect_puzzle(image_path)
+    detect_puzzle(image_path)
     cropped_image = cv2.imread(image_path)
     cropped_image_pil = Image.fromarray(cv2.cvtColor(cropped_image, cv2.COLOR_BGR2RGB))
 
     state_grid = create_state_space(extract_grid_colors(cropped_image_pil))
 
     display_grid(state_grid)
-
-    # display_grid(search_algorithms.breadth_first_search(state_grid))
