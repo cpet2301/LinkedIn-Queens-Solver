@@ -3,6 +3,7 @@ from PIL import Image
 import pyautogui
 import numpy as np
 from collections import Counter
+import search_algorithms
 
 def detect_puzzle(file_name):
     """
@@ -15,7 +16,7 @@ def detect_puzzle(file_name):
         filename (string): The name of the file that the image will be saved to.
      
     Returns:
-        None
+        None: Saves a .png file of the cropped image to the provided file name.
     """
     # Step 1: Capture the screen
     screen = pyautogui.screenshot()
@@ -223,25 +224,26 @@ def display_grid(state_grid):
     Returns:
         None: The function prints the grid directly to the console.
     """
-    cell_width = 6  # Width for each cell (e.g., '10 (Q)' fits well)
+    if state_grid:
+        cell_width = 6  # Width for each cell (e.g., '10 (Q)' fits well)
 
-    horizontal_border = '+' + ('-' * cell_width + '+') * len(state_grid[0])
-    print(horizontal_border)
-
-    for row in state_grid:
-        row_str = '|'
-        for cell in row:
-            is_queen, region_id = cell
-            if is_queen == 1:
-                cell_content = f"{region_id}(Q)"
-            else:
-                cell_content = f"{region_id}"
-            
-            # Pad content to align each cell to the fixed width
-            cell_str = f"{cell_content:<{cell_width}}"
-            row_str += cell_str + '|'
-        print(row_str)
+        horizontal_border = '+' + ('-' * cell_width + '+') * len(state_grid[0])
         print(horizontal_border)
+
+        for row in state_grid:
+            row_str = '|'
+            for cell in row:
+                is_queen, region_id = cell
+                if is_queen == 1:
+                    cell_content = f"{region_id}(Q)"
+                else:
+                    cell_content = f"{region_id}"
+                
+                # Pad content to align each cell to the fixed width
+                cell_str = f"{cell_content:<{cell_width}}"
+                row_str += cell_str + '|'
+            print(row_str)
+            print(horizontal_border)
 
 # Test
 if __name__ == "__main__":
@@ -253,4 +255,4 @@ if __name__ == "__main__":
 
     state_grid = create_state_space(extract_grid_colors(cropped_image_pil))
 
-    display_grid(state_grid)
+    display_grid(search_algorithms.backtracking_search(state_grid))
